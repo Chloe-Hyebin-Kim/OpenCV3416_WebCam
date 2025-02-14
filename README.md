@@ -22,10 +22,13 @@
 
 ## Requirements
 
-- ` VisualStudio 2019` , `OpenCV 3.4.16` 
+- `VisualStudio 2019` , [VisualStudio 2019 📥](https://visualstudio.microsoft.com/ko/vs/older-downloads/) 
+- `OpenCV 3.4.16` [OpenCV 📥](https://opencv.org/releases/) 
+
 
 ## Supported Platforms
 
-- `Windows` , `VisualStudio 2019`
+- `Windows10` ,
+- `VisualStudio 2019`
 
 ## How to Run the Sample
