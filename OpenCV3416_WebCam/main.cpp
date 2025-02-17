@@ -11,9 +11,6 @@ int main(int ac, char** av)
 	//FindBall_1();
 	//i32Rst = FindBall_2() ? 0 : -1;
 
-
-
-
 	DetectorUtil* pDetector = new DetectorUtil(); // 포인터로 객체 생성
 
 	if (!pDetector)
@@ -22,8 +19,11 @@ int main(int ac, char** av)
 		return -1;
 	}
 
-	//pDetector->Run(); // 실시간 감지 실행
-	pDetector->ProcessMorphGaussianHough(); // 실시간 감지 실행
+	//pDetector->Run(); //운곽선 검출
+	//pDetector->ProcessMorphGaussianHough(); // 그림자 제거
+	//pDetector->CustomProcess(); //히스토그램 평활화
+	//pDetector->CustomAdaptiveProcess(); //어댑티브 임계값 적용
+	pDetector->FindCandidateArea(); //어댑티브 임계값 적용
 
 	delete pDetector; // 메모리 해제
 
@@ -172,7 +172,8 @@ bool FindBall_2()
 		inRange(hsv, lower_white, upper_white, mask); // 흰색 범위 설정
 
 		// 2. 모폴로지 연산 (노이즈 제거)
-		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));
+		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));// 작은 커널 (세밀한 그림자 제거)
+		//Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(25, 25));// 큰 커널 (넓은 그림자 제거, 큰 객체 강조)
 
 		Mat processed;
 		morphologyEx(mask, processed, MORPH_OPEN, kernel);

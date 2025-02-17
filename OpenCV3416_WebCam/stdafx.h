@@ -19,7 +19,11 @@ using namespace cv;
 #include <iostream>
 #include <stdio.h>
 
+#include <thread>
+#include <mutex>
+
 using namespace std;
+
 
 #define MAIN_FRAME	"Camera View"
 #define DEBUG_FRAME	"Morphology Mask View"
@@ -30,5 +34,5 @@ using namespace std;
 
 #define M_PI 3.14159265358979323846
 
-#define MAX_BALLRADIUS 120
-#define MIN_BALLRADIUS 20
+#define MAXBALLRADIUS 120
+#define MINBALLRADIUS 35

@@ -1,5 +1,5 @@
 #include "DetectorUtil.h"
-
+#include <omp.h>
 
 DetectorUtil::DetectorUtil()
 {
@@ -161,7 +161,7 @@ vector<Rect> DetectorUtil::DetectBalls(const Mat& mask)
 	vector<Vec4i> hierarchy;
 	findContours(mask, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-	vector<Rect> ballBoxes;
+	vector<Rect> ballBoxes;	// 바운딩 박스 좌표를 저장할 벡터
 	for (const vector<Point>& contour : contours)
 	{
 		double area = contourArea(contour);
@@ -190,15 +190,7 @@ vector<Rect> DetectorUtil::DetectBalls(const Mat& mask)
 
 void DetectorUtil::FindCandidateArea()
 {
-	(*m_pCapture) >> (*m_pOriginFrame);
-
-	if (m_pOriginFrame->empty())
-	{
-		printf("[ERROR] [DetectorUtil::ProcessFrame(Mat& outputFrame)] m_pOriginFrame is Empty! \n");
-		return;
-	}
-
-	Mat imgSrc = m_pOriginFrame->clone();
+	/*Mat imgSrc = m_pOriginFrame->clone();
 	Rect rtImage(0, 0, imgSrc.cols, imgSrc.rows);
 	Rect FindROI = Rect(0, 0, 2048, 660);//Rect(0,0,1650,660);
 
@@ -208,13 +200,497 @@ void DetectorUtil::FindCandidateArea()
 		return;
 	}
 
-	cv::Mat ROIArea = imgSrc(FindROI).clone();
+	Mat ROIArea = imgSrc(FindROI).clone();
 
-	/*cv::threshold(ROIArea, ROIArea, (double)ReadyDat.nAvr, COLOR_MAX.0, cv::THRESH_BINARY);
+	threshold(ROIArea, ROIArea, (double)ReadyDat.nAvr, COLOR_MAX.0, THRESH_BINARY);
 
-	std::vector<std::vector<cv::Point>> contour;
-	cv::findContours(ROIArea, contour, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+	vector<vector<Point>> contour;
+	findContours(ROIArea, contour, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 	nBlob = contour.size();*/
+
+
+	if (!IsCameraOpened())
+		return;
+	bool bLoop = true;
+	do
+	{
+		(*m_pCapture) >> (*m_pOriginFrame);
+
+		if (m_pOriginFrame->empty())
+		{
+			printf("[ERROR] [DetectorUtil::FindCandidateArea()] m_pOriginFrame is Empty! \n");
+			return;
+		}
+		Mat BallROI = m_pOriginFrame->clone();
+
+		CirInfo circle;
+		FindCircle(*m_pOriginFrame, 235, circle);
+
+
+		bLoop = ESCKeyUser();
+	} while (bLoop);
+}
+
+
+
+
+void DetectorUtil::FindCircle(Mat imgSrc, unsigned char Thres, CirInfo& circle)
+{
+	Mat EdgeImg = m_pOriginFrame->clone();
+	Mat CloneImg;
+	Mat EdgeImgClone;
+	Mat Contour;
+
+
+	Canny(EdgeImg, EdgeImgClone, 40, 80, 3);
+	threshold(*m_pOriginFrame, Contour, (double)235, 255.0, THRESH_BINARY);
+
+	Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
+
+	erode(Contour, CloneImg, kernel);
+	dilate(CloneImg, Contour, kernel, Point(-1, -1), 4);
+
+	bitwise_and(EdgeImgClone, Contour, EdgeImg);
+
+	int nEdgeCnt = 0;
+	unsigned char* pPos;
+	for (int i = 0; i < EdgeImg.rows; ++i)
+	{
+		pPos = (unsigned char*)(EdgeImg.row(i).data);
+		for (int j = 0; j < EdgeImg.cols; ++j)
+		{
+			if (pPos[j] == 255)
+			{
+				++nEdgeCnt;
+			}
+		}
+	}
+
+	if (nEdgeCnt == 0)
+	{
+		printf("[ERROR] [DetectorUtil::ProcessFrame(Mat& outputFrame)] nEdgeCnt is Zero! \n");
+		return;
+	}
+
+	vector<Point> pEdgePos(nEdgeCnt);
+	memset(pEdgePos.data(), 0x0, sizeof(Point) * nEdgeCnt);
+
+	nEdgeCnt = 0;
+	for (int i = 0; i < EdgeImg.rows; ++i)
+	{
+		pPos = (unsigned char*)(EdgeImg.row(i).data);
+		for (int j = 0; j < EdgeImg.cols; ++j)
+		{
+			if (pPos[j] == 255)
+			{
+				pEdgePos[nEdgeCnt] = Point(j, i);
+				++nEdgeCnt;
+			}
+		}
+	}
+
+
+	int nHeightTmp = (m_pOriginFrame->rows - 2 * MINBALLRADIUS);
+	int nWidthTmp = (m_pOriginFrame->cols - 2 * MINBALLRADIUS);
+
+	if ((nHeightTmp < 1) || (nWidthTmp < 1))
+	{
+		return;
+	}
+
+	int nCenNum = nHeightTmp * nWidthTmp;
+
+	if (nCenNum < 1)
+	{
+		return;
+	}
+
+
+	vector<Point> CenArray(nCenNum);
+
+	int cnt = 0;
+
+	for (int y = MINBALLRADIUS; y < m_pOriginFrame->rows - MINBALLRADIUS; ++y)
+	{
+		for (int x = MINBALLRADIUS; x < m_pOriginFrame->cols - MINBALLRADIUS; ++x)
+		{
+			CenArray[cnt].x = x;
+			CenArray[cnt].y = y;
+			++cnt;
+		}
+	}
+	int nMaxAccumIdx = 0;
+	int nMaxAccumRadius = 0;
+	int nRadiusMax = 0;
+	int nMaxR = MAXBALLRADIUS * MAXBALLRADIUS - 1;
+	int nMinR = MINBALLRADIUS * MINBALLRADIUS;
+	int nArrayIdx = 0;
+	int nMaxIdx = 0;
+
+	CirInfo cir;
+
+	vector<CirInfo> CirInfoArray(nCenNum);
+
+	for (int nCenIdx = 0; nCenIdx < nCenNum; nCenIdx += 1)
+	{
+		int nEdgeCnt1;
+		vector<Point> pEdgePos1(nEdgeCnt);
+		Point CenArray1;
+		CirInfo Info;
+
+		memcpy(pEdgePos1.data(), pEdgePos.data(), sizeof(Point) * nEdgeCnt);
+		CenArray1 = CenArray[nCenIdx];
+		nEdgeCnt1 = nEdgeCnt;
+
+		Info = CalcRadiusCenter(pEdgePos1, CenArray1, nEdgeCnt1);
+
+		CirInfoArray[nCenIdx] = Info;
+	}
+
+	for (int nCenIdx = 0; nCenIdx < nCenNum; nCenIdx += 1)
+	{
+		if (nRadiusMax < CirInfoArray[nCenIdx].AccumPt)
+		{
+			nMaxIdx = nCenIdx;
+			nRadiusMax = CirInfoArray[nCenIdx].AccumPt;
+		}
+	}
+
+	cir.radius = CirInfoArray[nMaxIdx].radius;
+	cir.center.x = CirInfoArray[nMaxIdx].center.x;
+	cir.center.y = CirInfoArray[nMaxIdx].center.y;
+	cir.AccumPt = CirInfoArray[nMaxIdx].AccumPt;
+
+	CirInfof CirInfoArrayf[900];
+	Point2f Centerf[900];
+
+	memset(CirInfoArrayf, 0x0, sizeof(CirInfof) * 900);
+	memset(Centerf, 0x0, sizeof(Point2f) * 900);
+	int nCnt = 0;
+
+	for (int i = 0; i < 30; ++i)
+	{
+		for (int j = 0; j < 30; ++j)
+		{
+			Centerf[nCnt] = Point2f(((float)cir.center.x - 1.f) + 0.1f * j, ((float)cir.center.y - 1.f) + 0.1f * i);
+			nCnt++;
+		}
+	}
+
+	for (int nCenIdx = 0; nCenIdx < 900; nCenIdx += 1)
+	{
+		int Idx;
+		int nEdgeCnt1;
+		int CirRadius;
+		vector<Point> pEdgePos1(nEdgeCnt);
+		Point2f CenArray1;
+		CirInfof Info;
+
+		memcpy(pEdgePos1.data(), pEdgePos.data(), sizeof(Point) * nEdgeCnt);
+		CenArray1 = Centerf[nCenIdx];
+		nEdgeCnt1 = nEdgeCnt;
+		CirRadius = cir.radius;
+
+		Info = CalcRadiusCenterSub(pEdgePos1, CenArray1, CirRadius, nEdgeCnt1);
+
+		CirInfoArrayf[nCenIdx] = Info;
+	}
+
+	nRadiusMax = 0;
+	nMaxIdx = 0;
+
+	for (int nCenIdx = 0; nCenIdx < 900; nCenIdx += 1)
+	{
+		if (nRadiusMax < CirInfoArrayf[nCenIdx].AccumPt)
+		{
+			nMaxIdx = nCenIdx;
+			nRadiusMax = CirInfoArrayf[nCenIdx].AccumPt;
+		}
+	}
+
+	cir.radius = CirInfoArrayf[nMaxIdx].radius;
+	cir.center.x = CirInfoArrayf[nMaxIdx].center.x;
+	cir.center.y = CirInfoArrayf[nMaxIdx].center.y;
+	cir.AccumPt = CirInfoArrayf[nMaxIdx].AccumPt;
+
+
+	if (cir.AccumPt < 15)
+	{
+		return;
+	}
+}
+
+CirInfo DetectorUtil::CalcRadiusCenter(vector<Point>& Contour, Point pt1, int nNum)
+{
+	int nDist;
+	int nMaxR = MAXBALLRADIUS * MAXBALLRADIUS;
+	int nMinR = MINBALLRADIUS * MINBALLRADIUS;
+	int nDistArray[MAXBALLRADIUS + 1];
+	int nMaxIdx = 0;
+
+	memset(nDistArray, 0, sizeof(int) * (MAXBALLRADIUS + 1));
+	int nArrayIdx = 0;
+	int nMaxAccumIdx = 0;
+	int nMaxAccumRadius = 0;
+	CirInfo Circle;
+	Circle.AccumPt = 0;
+	Circle.center.x = 0;
+	Circle.center.y = 0;
+	Circle.radius = 0;
+
+	int nTmpValX = 0;
+	int nTmpValY = 0;
+
+	for (int nConIdx = 0; nConIdx < nNum; nConIdx += 3)
+	{
+		nTmpValX = Contour[nConIdx].x - pt1.x;
+		nTmpValY = Contour[nConIdx].y - pt1.y;
+
+		nDist = nTmpValX * nTmpValX + nTmpValY * nTmpValY;
+
+		if ((nDist < nMaxR) && (nDist > nMinR))
+		{
+			nArrayIdx = cvRound(sqrt((float)nDist));
+			if (nArrayIdx < MAXBALLRADIUS)
+			{
+				nDistArray[nArrayIdx - 1] += 1;
+				nDistArray[nArrayIdx] += 1;
+				nDistArray[nArrayIdx + 1] += 1;
+			}
+		}
+	}
+
+	for (int Idx = 0; Idx < MAXBALLRADIUS + 1; ++Idx)
+	{
+		if (nMaxAccumIdx < nDistArray[Idx])
+		{
+			nMaxAccumIdx = nDistArray[Idx];
+			nMaxAccumRadius = Idx;
+			Circle.AccumPt = nMaxAccumIdx;
+			Circle.center.x = pt1.x;
+			Circle.center.y = pt1.y;
+			Circle.radius = nMaxAccumRadius;
+		}
+	}
+
+	return Circle;
+}
+
+CirInfof DetectorUtil::CalcRadiusCenterSub(vector<Point> Contour, Point2f pt1, float nRadius, int nNum)
+{
+	double dDist;
+	double dMaxR = (nRadius + 2.f) * (nRadius + 2.f);
+	double dMinR = (nRadius - 2.f) * (nRadius - 2.f);
+	int nDistArray[300];
+	memset(nDistArray, 0, sizeof(int) * (300));
+	int nArrayIdx = 0;
+	int nMaxAccumIdx = 0;
+	int nMaxAccumRadius = 0;
+	CirInfof Circle;
+	Circle.AccumPt = 0;
+	Circle.center.x = 0.f;
+	Circle.center.y = 0.f;
+	Circle.radius = 0.f;
+
+
+	for (int nConIdx = 0; nConIdx < nNum; nConIdx += 3)
+	{
+		dDist = ((float)Contour[nConIdx].x - pt1.x) * ((float)Contour[nConIdx].x - pt1.x) + ((float)Contour[nConIdx].y - pt1.y) * ((float)Contour[nConIdx].y - pt1.y);
+
+		if ((dDist < dMaxR) && (dDist > dMinR))
+		{
+			nArrayIdx = cvRound((sqrt(dDist) - nRadius) * 10.f) + 150;
+			if (nArrayIdx < 299)
+			{
+				nDistArray[nArrayIdx - 1] += 1;
+				nDistArray[nArrayIdx] += 1;
+				nDistArray[nArrayIdx + 1] += 1;
+			}
+		}
+	}
+
+	for (int Idx = 0; Idx < 300; ++Idx)
+	{
+		if (nMaxAccumIdx < nDistArray[Idx])
+		{
+			nMaxAccumIdx = nDistArray[Idx];
+			nMaxAccumRadius = Idx;
+			Circle.AccumPt = nMaxAccumIdx;
+			Circle.center.x = pt1.x;
+			Circle.center.y = pt1.y;
+			Circle.radius = ((float)(nMaxAccumRadius - 150) / 10.f + nRadius);
+		}
+	}
+
+	return Circle;
+}
+
+bool DetectorUtil::CustomAdaptiveProcess()
+{
+	bool rst = false;
+
+	if (!IsCameraOpened())
+		return rst;
+
+	bool bLoop = true;
+	do
+	{
+		(*m_pCapture) >> (*m_pOriginFrame);
+
+		if (m_pOriginFrame->empty())
+		{
+			printf("[ERROR] [DetectorUtil::ProcessFrame(Mat& outputFrame)] m_pOriginFrame is Empty! \n");
+			rst = false;
+			bLoop = false;
+			break;
+		}
+
+		rst = true;
+
+		Mat processFrame = m_pOriginFrame->clone();
+
+		// 1. BGR → Grayscale 변환 (HSV 변환 X)
+		Mat grayFrame;
+		cvtColor(processFrame, grayFrame, COLOR_BGR2GRAY);
+
+		// 2. 그림자 제거 (Top-Hat 변환)
+		Mat tophatFrame;
+		Mat kernel = getStructuringElement(MORPH_RECT, Size(15, 15)); // 커널 크기 조정 가능
+		morphologyEx(grayFrame, tophatFrame, MORPH_TOPHAT, kernel);// 배경보다 더 밝은 객체 강조
+
+		// 3. 어댑티브 임계값 적용
+		Mat binaryFrame;
+		adaptiveThreshold(grayFrame, binaryFrame, COLOR_MAX, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 11, 2);//임계값을 계산할 블록 크기(11 : 값이 크면 넓은 영역을 고려), 계산된 임계값에서 조정하는 보정값(2 : 값이 크면 어두워짐)
+
+		// 4. 노이즈 제거 (Morphological 연산)
+		kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+		morphologyEx(binaryFrame, binaryFrame, MORPH_CLOSE, kernel);  // 작은 구멍을 메워 골프공이 깨지는 것을 방지
+		morphologyEx(binaryFrame, binaryFrame, MORPH_OPEN, kernel);   // 작은 노이즈 제거
+
+
+		//5. 결과 출력
+
+		//// 결과를 표시할 컬러 이미지로 변환
+		//Mat outFrame;
+		//cvtColor(binaryFrame, outFrame, COLOR_GRAY2BGR);
+
+		//// 원을 검출할 수 있도록 가우시안 블러 적용
+		//Mat blurred;
+		//GaussianBlur(outFrame, blurred, Size(5, 5), 1.5);
+
+		////HoughCircles 함수를 사용하여 원을 검출.
+		//vector<Vec3f> circles;//원을 검출할 벡터
+		//HoughCircles(blurred, circles, HOUGH_GRADIENT, 1, 20, 100, 30, 10, 100);
+
+		//// 바운딩 박스 좌표를 저장할 벡터
+		//vector<Rect> boundingBoxes;
+
+		//for (size_t i = 0; i < circles.size(); i++)
+		//{
+		//	// 원의 중심과 반지름을 계산
+		//	Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+		//	int radius = cvRound(circles[i][2]);
+
+		//	// 원을 감싸는 바운딩 박스를 계산 (초록색 네모박스를 위한 좌표)
+		//	Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
+		//	boundingBoxes.push_back(boundingBox);
+		//}
+
+		//// 검출된 공 주변에 초록색 네모 박스 그리기
+		//for (const Rect& ball : boundingBoxes)
+		//{
+		//	rectangle(outFrame, ball, Scalar(0, COLOR_MAX, 0), 2);
+		//}
+		//imshow(MAIN_FRAME, outFrame);
+
+		imshow("Original", *m_pOriginFrame);
+		imshow("Grayscale", grayFrame);
+		imshow("Top-Hat", tophatFrame);
+		imshow("Adaptive Threshold", binaryFrame);
+
+		bLoop = ESCKeyUser();
+	} while (bLoop);
+
+	return rst;
+}
+
+bool DetectorUtil::CustomProcess()
+{
+	bool rst = false;
+
+	if (!IsCameraOpened())
+		return rst;
+
+	bool bLoop = true;
+	do
+	{
+		(*m_pCapture) >> (*m_pOriginFrame);
+
+		if (m_pOriginFrame->empty())
+		{
+			printf("[ERROR] [DetectorUtil::ProcessFrame(Mat& outputFrame)] m_pOriginFrame is Empty! \n");
+			rst = false;
+			bLoop = false;
+			break;
+		}
+
+		rst = true;
+
+		Mat processFrame = m_pOriginFrame->clone();
+
+		// 1. BGR → HSV 변환
+		Mat hsvFrame;
+		cvtColor(processFrame, hsvFrame, COLOR_BGR2HSV);
+
+		// 2. HSV 채널 분리 (H, S, V)
+		vector<Mat> hsvChannels;
+		split(hsvFrame, hsvChannels);
+
+		// 3. V 채널(밝기)에 히스토그램 평활화 적용
+		equalizeHist(hsvChannels[2], hsvChannels[2]);
+
+		// 4. 채널 병합
+		merge(hsvChannels, hsvFrame);
+
+		// 5. HSV → BGR 변환 (최종 출력)
+		Mat resultFrame;
+		cvtColor(hsvFrame, resultFrame, COLOR_HSV2BGR);
+
+
+		// 원을 검출할 수 있도록 가우시안 블러 적용
+		Mat blurred;
+		GaussianBlur(resultFrame, blurred, Size(5, 5), 1.5);
+
+		//HoughCircles 함수를 사용하여 원을 검출.
+		vector<Vec3f> circles;//원을 검출할 벡터
+		HoughCircles(blurred, circles, HOUGH_GRADIENT, 1, 20, 100, 30, 10, 100);
+
+		// 바운딩 박스 좌표를 저장할 벡터
+		vector<Rect> boundingBoxes;
+		for (size_t i = 0; i < circles.size(); i++)
+		{
+			// 원의 중심과 반지름을 계산
+			Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+			int radius = cvRound(circles[i][2]);
+
+			// 원을 감싸는 바운딩 박스를 계산 (초록색 네모박스를 위한 좌표)
+			Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
+			boundingBoxes.push_back(boundingBox);
+		}
+
+		// 검출된 공 주변에 초록색 네모 박스 그리기
+		for (const Rect& ball : boundingBoxes)
+		{
+			rectangle(resultFrame, ball, Scalar(0, COLOR_MAX, 0), 2);
+		}
+
+		imshow(MAIN_FRAME, resultFrame); //show the original image
+
+
+		bLoop = ESCKeyUser();
+	} while (bLoop);
+
+	return rst;
 }
 
 
@@ -226,41 +702,13 @@ bool DetectorUtil::ProcessMorphGaussianHough()
 	Mat im1, im2;
 	vector<Mat> bgr(3);
 
-	/*
-	 int iLowH = 170;
-	int iHighH = 179;
-
-	int iLowS = 150;
-	int iHighS = 255;
-
-	int iLowV = 60;
-	int iHighV = 255;
-	 */
-
 	bool bLoop = true;
 	do
 	{
 		(*m_pCapture) >> im1;
 
-		/*
-
-		Mat imgOriginal;
-		im1.copyTo(imgOriginal);
-
-		Mat imgHSV;
-		cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
-
-		Mat imgThresholded;
-		inRange(imgHSV, Scalar(170, 150, 60), Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
-
-		 */
-
-
-
-
-
 		im1.copyTo(im2);
-		cvtColor(im1, im1, COLOR_BGR2HSV);// Convert BGR to HSV  (CV_BGR2HSV == COLOR_BGR2HSV)
+		cvtColor(im1, im1, CV_BGR2HSV);// HSV 변환
 		split(im1, bgr);
 
 
@@ -296,7 +744,7 @@ Mat DetectorUtil::Hough2d(Mat img, Mat msk)
 	Mat img2 = img;//Mat img2 = img.clone();
 
 	vector<Vec3f> circles;
-	HoughCircles(hough_in, circles, CV_HOUGH_GRADIENT, 40, 10, 100, 40);
+	HoughCircles(hough_in, circles, CV_HOUGH_GRADIENT, 40, 1, 100, 40);
 
 	RNG rng(12345);
 	Mat threshold_output;
@@ -307,7 +755,7 @@ Mat DetectorUtil::Hough2d(Mat img, Mat msk)
 	double f64MaxValue = 255.f;
 	threshold(hough_in, threshold_output, f64Thresh, f64MaxValue, THRESH_BINARY);
 
-	//threshold(im1, im2, 180, COLOR_MAX, cv::THRESH_BINARY);
+	//threshold(im1, im2, 180, COLOR_MAX, THRESH_BINARY);
 
 	findContours(threshold_output, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0));
 
@@ -324,7 +772,7 @@ Mat DetectorUtil::Hough2d(Mat img, Mat msk)
 
 	for (size_t i = 0; i < contours.size(); i++)
 	{
-		approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
+		approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);//다각형 근사
 		boundRect[i] = boundingRect(Mat(contours_poly[i]));
 		minEnclosingCircle(contours_poly[i], center[i], radius[i]);
 
@@ -369,4 +817,66 @@ Mat DetectorUtil::RescaleImage(Mat img, double factor)
 	resize(img, img2, s);
 
 	return(img2);
+}
+
+
+
+void DetectorUtil::DrawBoundingBox(Mat& targetFrame, const vector<Rect>& boundingBoxes)
+{
+	// 컬러 버전 이미지 생성
+	//cvtColor(targetFrame, outFrame, COLOR_GRAY2BGR);
+
+	// 검출된 공 주변에 초록색 네모 박스 그리기
+	for (const Rect& ball : boundingBoxes)
+	{
+		//rectangle(outFrame, boundingBoxes[i], Scalar(0, COLOR_MAX, 0), 2);// 초록색 네모 박스==Scalar(0, COLOR_MAX, 0)
+		rectangle(targetFrame, ball, Scalar(0, COLOR_MAX, 0), 2);
+	}
+
+	//imshow("Detected Golf Ball Area", outFrame);
+}
+
+vector<Rect> DetectorUtil::DetectBallArea(const Mat& targetFrame)
+{
+	// 원을 검출할 수 있도록 가우시안 블러 적용
+	Mat blurred;
+	GaussianBlur(targetFrame, blurred, Size(7, 7), 0, 0);
+
+
+	//HoughCircles 함수를 사용하여 원을 검출.
+
+	vector<Vec3f> circles;//원을 검출할 벡터
+	HoughCircles(blurred, circles, HOUGH_GRADIENT, 1, 20, 100, 30, 10, 100);
+
+	// 바운딩 박스 좌표를 저장할 벡터
+	vector<Rect> boundingBoxes;
+
+	for (size_t i = 0; i < circles.size(); i++)
+	{
+		// 원의 중심과 반지름을 계산
+		Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+		int radius = cvRound(circles[i][2]);
+
+		// 원을 감싸는 바운딩 박스를 계산 (초록색 네모박스를 위한 좌표)
+		Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
+		boundingBoxes.push_back(boundingBox);
+	}
+
+	return boundingBoxes;
+}
+
+
+void DetectorUtil::ShowResult(const Mat& inFrame, Mat& outFrame)
+{
+	//// 골프공이 있는 영역에 대한 바운딩 박스를 계산
+	//vector<Rect> ballBoxes = DetectBallArea(inFrame);
+
+	//// 결과를 표시할 컬러 이미지로 변환 (초록색 네모 박스를 시각적으로 표시하기 위해)
+	//cvtColor(inFrame, outFrame, COLOR_GRAY2BGR);
+
+	//// 바운딩 박스를 그려주기
+	//DrawBoundingBox(outFrame, ballBoxes);
+
+	//// 결과 출력
+	////imshow("Detected Golf Ball Area", outFrame);
 }
