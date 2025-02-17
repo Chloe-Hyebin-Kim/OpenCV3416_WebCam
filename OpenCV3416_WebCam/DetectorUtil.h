@@ -29,7 +29,7 @@ public:
 
 	VideoCapture& GetVideoCapture() const { return *m_pCapture; }
 
-	//void FindCandidateArea();
+	void FindCandidateArea();
 
 private:
 	//Run() Àü¿ë

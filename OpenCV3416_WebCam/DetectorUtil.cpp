@@ -131,7 +131,7 @@ void DetectorUtil::ProcessFrame(Mat& outputFrame)
 	// 검출된 공 주변에 네모 박스 그리기
 	for (const Rect& ball : balls)
 	{
-		rectangle(outputFrame, ball, Scalar(0, 255, 0), 2);
+		rectangle(outputFrame, ball, Scalar(0, COLOR_MAX, 0), 2);
 	}
 }
 
@@ -143,7 +143,7 @@ Mat DetectorUtil::Preprocess()
 
 	// 2. 색상 필터링 (흰색 영역 검출)
 	Mat mask;
-	inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), mask); // 흰색 영역 검출
+	inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, COLOR_MAX), mask); // 흰색 영역 검출
 
 	// 3. 모폴로지 연산 (노이즈 제거)
 	Mat processed; // 모폴로지 연산 후 결과 프레임
@@ -188,6 +188,35 @@ vector<Rect> DetectorUtil::DetectBalls(const Mat& mask)
 	return ballBoxes;
 }
 
+void DetectorUtil::FindCandidateArea()
+{
+	(*m_pCapture) >> (*m_pOriginFrame);
+
+	if (m_pOriginFrame->empty())
+	{
+		printf("[ERROR] [DetectorUtil::ProcessFrame(Mat& outputFrame)] m_pOriginFrame is Empty! \n");
+		return;
+	}
+
+	Mat imgSrc = m_pOriginFrame->clone();
+	Rect rtImage(0, 0, imgSrc.cols, imgSrc.rows);
+	Rect FindROI = Rect(0, 0, 2048, 660);//Rect(0,0,1650,660);
+
+	if (FindROI != (FindROI & rtImage))
+	{
+		printf("[ ERROR ] [DetectorUtil::FindCandidateArea()] ROI Bound error. \n");
+		return;
+	}
+
+	cv::Mat ROIArea = imgSrc(FindROI).clone();
+
+	/*cv::threshold(ROIArea, ROIArea, (double)ReadyDat.nAvr, COLOR_MAX.0, cv::THRESH_BINARY);
+
+	std::vector<std::vector<cv::Point>> contour;
+	cv::findContours(ROIArea, contour, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+	nBlob = contour.size();*/
+}
+
 
 bool DetectorUtil::ProcessMorphGaussianHough()
 {
@@ -197,20 +226,49 @@ bool DetectorUtil::ProcessMorphGaussianHough()
 	Mat im1, im2;
 	vector<Mat> bgr(3);
 
+	/*
+	 int iLowH = 170;
+	int iHighH = 179;
+
+	int iLowS = 150;
+	int iHighS = 255;
+
+	int iLowV = 60;
+	int iHighV = 255;
+	 */
+
 	bool bLoop = true;
 	do
 	{
 		(*m_pCapture) >> im1;
 
+		/*
+
+		Mat imgOriginal;
+		im1.copyTo(imgOriginal);
+
+		Mat imgHSV;
+		cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
+
+		Mat imgThresholded;
+		inRange(imgHSV, Scalar(170, 150, 60), Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
+
+		 */
+
+
+
+
+
 		im1.copyTo(im2);
-		cvtColor(im1, im1, CV_BGR2HSV);// HSV 변환
+		cvtColor(im1, im1, COLOR_BGR2HSV);// Convert BGR to HSV  (CV_BGR2HSV == COLOR_BGR2HSV)
 		split(im1, bgr);
 
 
 		vector<Mat> bgr_thresh(3);
-		threshold(bgr[0], bgr_thresh[0], 26, 255, THRESH_BINARY);
-		threshold(bgr[1], bgr_thresh[1], 60, 255, THRESH_BINARY);
-		threshold(bgr[2], bgr_thresh[2], 140, 255, THRESH_BINARY);
+		threshold(bgr[0], bgr_thresh[0], 40, COLOR_MAX, THRESH_BINARY);
+		threshold(bgr[1], bgr_thresh[1], 80, COLOR_MAX, THRESH_BINARY);
+		threshold(bgr[2], bgr_thresh[2], 180, COLOR_MAX, THRESH_BINARY);
+
 
 		Mat bitwised;
 		bitwise_and(bgr_thresh[0], bgr_thresh[1], bitwised);
@@ -224,6 +282,7 @@ bool DetectorUtil::ProcessMorphGaussianHough()
 
 		Mat hough = Hough2d(im2, blurred);
 		imshow(MAIN_FRAME, hough);
+		imshow(DEBUG_FRAME, blurred);
 
 		bLoop = ESCKeyUser();
 	} while (bLoop);
@@ -239,15 +298,16 @@ Mat DetectorUtil::Hough2d(Mat img, Mat msk)
 	vector<Vec3f> circles;
 	HoughCircles(hough_in, circles, CV_HOUGH_GRADIENT, 40, 10, 100, 40);
 
-	int thresh = 100;
-
-
 	RNG rng(12345);
 	Mat threshold_output;
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
 
-	threshold(hough_in, threshold_output, thresh, 255, THRESH_BINARY);
+	double f64Thresh = 100.f;
+	double f64MaxValue = 255.f;
+	threshold(hough_in, threshold_output, f64Thresh, f64MaxValue, THRESH_BINARY);
+
+	//threshold(im1, im2, 180, COLOR_MAX, cv::THRESH_BINARY);
 
 	findContours(threshold_output, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0));
 
@@ -268,7 +328,7 @@ Mat DetectorUtil::Hough2d(Mat img, Mat msk)
 		boundRect[i] = boundingRect(Mat(contours_poly[i]));
 		minEnclosingCircle(contours_poly[i], center[i], radius[i]);
 
-		Scalar color = Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+		Scalar color = Scalar(rng.uniform(0, COLOR_MAX), rng.uniform(0, COLOR_MAX), rng.uniform(0, COLOR_MAX));
 
 		//circle(img2, center[i], (int)radius[i], color, 5, 8, 0);
 	}
@@ -278,7 +338,7 @@ Mat DetectorUtil::Hough2d(Mat img, Mat msk)
 
 	int dis = distance(radius.begin(), tempo);
 
-	circle(img2, center[dis], (int)maxrad, { 0, 0, 255 }, 2, 8, 0);
+	circle(img2, center[dis], (int)maxrad, { 0, 0, COLOR_MAX }, 2, 8, 0);
 	//cout << "max radius is " << endl;
 
 	return(img2);

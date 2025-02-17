@@ -26,6 +26,8 @@ using namespace std;
 
 #define MAXLOGSIZE 1024
 
+#define COLOR_MAX 255
+
 #define M_PI 3.14159265358979323846
 
 #define MAX_BALLRADIUS 120

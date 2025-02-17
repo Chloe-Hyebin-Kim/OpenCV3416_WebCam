@@ -142,7 +142,7 @@ bool FindBall_2()
 
 	if (!vCapture.isOpened()) // if not success, exit program
 	{
-		printf("Can't open the camera");
+		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<<");
 
 		vCapture.release();
 		destroyAllWindows();
@@ -152,18 +152,29 @@ bool FindBall_2()
 
 	while (true)
 	{
-		Mat frame, hsv, mask, processed;
+		Mat frame;
 		vCapture >> frame;
 
 		if (frame.empty())
+		{
+			printf("[ERROR] >>>>>>>>>>>> frame is empty! <<<<<<<<<<<<");
 			break;
+		}
 
-		// 1. 색상 필터링 (HSV 변환 후 흰색 마스크 생성)
+		// 1. Convert BGR to HSV   //색상 필터링 (HSV 변환 후 흰색 마스크 생성)
+		Mat hsv;
 		cvtColor(frame, hsv, COLOR_BGR2HSV);
-		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), mask); // 흰색 범위 설정
+
+		//2. 흰색 범위 설정
+		cv::Scalar lower_white(0, 0, 180);
+		cv::Scalar upper_white(180, 50, 255);
+		Mat mask;
+		inRange(hsv, lower_white, upper_white, mask); // 흰색 범위 설정
 
 		// 2. 모폴로지 연산 (노이즈 제거)
 		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));
+
+		Mat processed;
 		morphologyEx(mask, processed, MORPH_OPEN, kernel);
 		morphologyEx(processed, processed, MORPH_CLOSE, kernel);
 
@@ -172,7 +183,8 @@ bool FindBall_2()
 		vector<Vec4i> hierarchy;
 		findContours(processed, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-		for (const auto& contour : contours) {
+		for (const auto& contour : contours)
+		{
 			double area = contourArea(contour);
 			if (area > 500) { // 일정 크기 이상만 처리
 				// 외접 원 찾기
