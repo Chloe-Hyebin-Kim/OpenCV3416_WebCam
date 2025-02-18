@@ -16,9 +16,12 @@
 
 using namespace cv;
 
+
 #include <iostream>
 #include <stdio.h>
 
+
+//thread
 #include <thread>
 #include <mutex>
 
@@ -36,3 +39,6 @@ using namespace std;
 
 #define MAXBALLRADIUS 120
 #define MINBALLRADIUS 35
+
+
+//#define LOG_INFO(str1,str2) {CString str; str.Format(_T("[ >>>>>>>> %s <<<<<<<< ]  %s \n"),str1,str2); OutputDebugString(str);}

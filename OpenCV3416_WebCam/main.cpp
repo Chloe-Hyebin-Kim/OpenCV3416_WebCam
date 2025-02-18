@@ -1,136 +1,228 @@
 #include "stdafx.h"
 #include "DetectorUtil.h"
 
-void FindBall_1();
+
+int FindBall_1();
 bool FindBall_2();
+
+int FindBall_3();
 
 int main(int ac, char** av)
 {
 	int i32Rst = 0;
 
+	//CString a;
+	//	CString b;
+	//	LOG_INFO(a, b);
+
+
 	//FindBall_1();
 	//i32Rst = FindBall_2() ? 0 : -1;
+	i32Rst = FindBall_3() ? 0 : -1;
 
-	DetectorUtil* pDetector = new DetectorUtil(); // 포인터로 객체 생성
+	//DetectorUtil* pDetector = new DetectorUtil(); // 포인터로 객체 생성
 
-	if (!pDetector)
-	{
-		printf("[ ERROR ] DetectorUtil is NULL!!! \n");
-		return -1;
-	}
+	//if (!pDetector)
+	//{
+	//	printf("[ ERROR ] DetectorUtil is NULL!!! \n");
+	//	return -1;
+	//}
 
 	//pDetector->Run(); //운곽선 검출
 	//pDetector->ProcessMorphGaussianHough(); // 그림자 제거
 	//pDetector->CustomProcess(); //히스토그램 평활화
 	//pDetector->CustomAdaptiveProcess(); //어댑티브 임계값 적용
-	pDetector->FindCandidateArea(); //어댑티브 임계값 적용
+	//pDetector->FindCandidateArea(); //어댑티브 임계값 적용
 
-	delete pDetector; // 메모리 해제
+	//delete pDetector; // 메모리 해제
 
 	return i32Rst;
 }
 
 
-void FindBall_1()
+int FindBall_3()
 {
-	VideoCapture vCapture(0);//0번 카메라
+	VideoCapture cap(0); // 웹캠 열기 (0번 카메라)
 
-	//Capture a temporary image from the camera
-	Mat imgTmp;
-	vCapture.read(imgTmp);
+	if (!cap.isOpened())
+	{
+		printf("[ERROR] Can't open the camera! \n");
+		return -1;
+	}
 
-	namedWindow(MAIN_FRAME, CV_WINDOW_AUTOSIZE); //create a window called "Control"
+	bool bFinish = false;
+	while (!bFinish)
+	{
+		int capW = cvRound(cap.get(CAP_PROP_FRAME_WIDTH));
+		int capH = cvRound(cap.get(CAP_PROP_FRAME_HEIGHT));
 
-	int iLowH = 170;
-	int iHighH = 179;
+		Mat src, srcGray, blurred, canny, thresh, hsv, filtered, cont, done;
+		vector< vector<Point> > contours;
+		vector< vector<Point> > ThreshContours;
+		vector<Vec4i> heirarchy;
 
-	int iLowS = 150;
-	int iHighS = 255;
+		cap >> src;
 
-	int iLowV = 60;
-	int iHighV = 255;
+		resize(src, src, Size(640, 480));
 
-	//Create trackbars in "Control" window
-	createTrackbar("LowH", "Control", &iLowH, 255); //Hue (0 - 179)
-	createTrackbar("HighH", "Control", &iHighH, 255);
+		// 1. BGR → Grayscale
+		hsv = src.clone();
+		cvtColor(src, srcGray, CV_BGR2GRAY);
 
-	createTrackbar("LowS", "Control", &iLowS, 255); //Saturation (0 - 255)
-	createTrackbar("HighS", "Control", &iHighS, 255);
+		//Uses HSV for filtering
+		cvtColor(src, hsv, CV_BGR2HSV);
+		blur(hsv, blurred, Size(13, 13));
 
-	createTrackbar("LowV", "Control", &iLowV, 255);//Value (0 - 255)
-	createTrackbar("HighV", "Control", &iHighV, 255);
+		inRange(hsv, Scalar(34, 23, 181), Scalar(48, 218, 255), filtered);
 
-	int iLastX = -1;
-	int iLastY = -1;
+		threshold(srcGray, thresh, 221, 255, CV_THRESH_BINARY);
 
-	//Create a black image with the size as the camera output
-	Mat imgLines = Mat::zeros(imgTmp.size(), CV_8UC3);
+		done = src.clone();
+
+		findContours(thresh, ThreshContours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+
+		drawContours(done, ThreshContours, -1, Scalar(0, 0, 0), -1);
+
+
+		vector<Point> largest;
+
+
+		findContours(filtered, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+		cont = Mat::zeros(filtered.size(), CV_8UC1);
+		drawContours(cont, contours, -1, Scalar(255, 255, 255), 1);
+
+
+		vector< vector<Point> > contours_poly(contours.size());
+		vector<Rect> boundRect(contours.size());
+		vector<Point2f> center(contours.size());
+		vector<float> radius(contours.size());
+
+
+		for (int i = 0; i < contours.size(); i++) {
+			approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
+			boundRect[i] = boundingRect(Mat(contours_poly[i]));
+			minEnclosingCircle((Mat)contours_poly[i], center[i], radius[i]);
+		}
+
+
+		string text;
+
+		for (int i = 0; i < contours.size(); i++) {
+			if (contourArea(contours[i]) > 650)
+				rectangle(done, boundRect[i].tl(), boundRect[i].br(), Scalar(255, 255, 255), 2);
+			text = to_string(i);
+		}
+
+
+		int circles = contours.size() - 1;
+
+
+		//show original
+		namedWindow("Original");
+		imshow("Original", src);
+
+		//show HSV
+		namedWindow("HSV");
+		imshow("HSV", hsv);
+
+		//show blurred
+		namedWindow("blurred");
+		imshow("blurred", blurred);
+
+		//show filtered
+		namedWindow("filtered");
+		imshow("filtered", filtered);
+
+		//show contours
+		namedWindow("contours");
+		imshow("contours", cont);
+
+		//show end img
+		namedWindow("end");
+		imshow("end", done);
+
+		namedWindow("thresh");
+		imshow("thresh", thresh);
+
+
+		bFinish = (waitKey(1) == 27) ? true : false;
+	}
+
+
+
+	cap.release();
+	destroyAllWindows();
+
+	return 0;
+}
+
+int FindBall_1()
+{
+	VideoCapture cap(0); // 웹캠 열기 (0번 카메라)
+
+	if (!cap.isOpened())
+	{
+		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<< \n");
+		return -1;
+	}
 
 
 	while (true)
 	{
-		Mat imgOriginal;
+		Mat frame;
+		cap >> frame; // 프레임 읽기
 
-		bool bSuccess = vCapture.read(imgOriginal); // read a new frame from video
-
-		if (!bSuccess) //if not success, break loop
+		if (frame.empty())
 		{
-			cout << "Cannot read a frame from video stream" << endl;
+			printf("[ERROR] >>>>>>>>>>>> Frame is empty! <<<<<<<<<<<< \n");
 			break;
 		}
 
-		Mat imgHSV;
-		cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
+		// 흑백 변환
+		Mat grayFrame;
+		cvtColor(frame, grayFrame, COLOR_BGR2GRAY);
+		GaussianBlur(grayFrame, grayFrame, Size(7, 7), 0, 0);
 
-		Mat imgThresholded;
+		/*threshold(grayFrame, grayFrame, (double)180.0, 255.0, THRESH_BINARY);
+		Mat kernel2 = getStructuringElement(MORPH_RECT, Size(3, 3));
+		erode(grayFrame, grayFrame, kernel2);
+		dilate(grayFrame, grayFrame, kernel2, Point(-1, -1), 4);
 
-		inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
+		imshow("SearchTopBinary", grayFrame);*/
 
-		//morphological opening (removes small objects from the foreground)
-		erode(imgThresholded, imgThresholded, getStructuringElement(CV_SHAPE_ELLIPSE, Size(3, 3)));
-		dilate(imgThresholded, imgThresholded, getStructuringElement(CV_SHAPE_ELLIPSE, Size(3, 3)));
+		// HoughCircles를 이용한 원 검출
+		vector<Vec3f> circles;
+		HoughCircles(grayFrame, circles, HOUGH_GRADIENT, 1, grayFrame.rows / 8, 100, 30, 10, 50);
 
-		//morphological closing (removes small holes from the foreground)
-		dilate(imgThresholded, imgThresholded, getStructuringElement(CV_SHAPE_ELLIPSE, Size(3, 3)));
-		erode(imgThresholded, imgThresholded, getStructuringElement(CV_SHAPE_ELLIPSE, Size(3, 3)));
-
-		//Calculate the moments of the thresholded image
-		Moments oMoments = moments(imgThresholded);
-
-		double dM01 = oMoments.m01;
-		double dM10 = oMoments.m10;
-		double dArea = oMoments.m00;
-
-		// if the area <= 5000, I consider that the there are no object in the image and it's because of the noise, the area is not zero
-		if (dArea > 5000)
+		// 검출된 원을 프레임에 표시
+		for (size_t i = 0; i < circles.size(); i++)
 		{
-			printf("DArea Now: %f \n", abs(dArea));
+			Vec3i c = circles[i];
+			Point center(c[0], c[1]);
+			int radius = c[2];
 
-			//calculate the position of the ball
-			int posX = dM10 / dArea;
-			int posY = dM01 / dArea;
-
-			if (iLastX >= 0 && iLastY >= 0 && posX >= 0 && posY >= 0)
-			{
-				//Draw a red line from the previous point to the current point
-				line(imgLines, Point(posX, posY), Point(iLastX, iLastY), Scalar(0, 0, 255), 2);
-			}
-
-			iLastX = posX;
-			iLastY = posY;
+			// 중심 표시
+			circle(frame, center, 3, Scalar(0, 255, 0), -1);
+			// 원 테두리 표시
+			circle(frame, center, radius, Scalar(0, 0, 255), 3);
 		}
 
-		imshow("Thresholded Image", imgThresholded); //show the thresholded image
+		// 결과 출력
+		imshow("Golf Ball Detection", frame);
 
-		imgOriginal = imgOriginal + imgLines;
-		imshow("Original", imgOriginal); //show the original image
 
-		if (waitKey(1) == 27) //wait for 'esc' key press for 1ms. If 'esc' key is pressed, break loop
+		// 'q' 키를 누르면 종료
+		if (waitKey(10) == 'q')
 		{
-			cout << "esc key is pressed by user" << endl;
+			printf("********************** EXIT PROGRAM ********************** \n");
 			break;
 		}
 	}
+
+	cap.release();
+	destroyAllWindows();
+
+	return 0;
 }
 
 
@@ -142,7 +234,7 @@ bool FindBall_2()
 
 	if (!vCapture.isOpened()) // if not success, exit program
 	{
-		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<<");
+		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<< \n");
 
 		vCapture.release();
 		destroyAllWindows();
@@ -157,7 +249,7 @@ bool FindBall_2()
 
 		if (frame.empty())
 		{
-			printf("[ERROR] >>>>>>>>>>>> frame is empty! <<<<<<<<<<<<");
+			printf("[ERROR] >>>>>>>>>>>> frame is empty! <<<<<<<<<<<< \n");
 			break;
 		}
 
@@ -166,8 +258,8 @@ bool FindBall_2()
 		cvtColor(frame, hsv, COLOR_BGR2HSV);
 
 		//2. 흰색 범위 설정
-		cv::Scalar lower_white(0, 0, 180);
-		cv::Scalar upper_white(180, 50, 255);
+		Scalar lower_white(0, 0, 180);
+		Scalar upper_white(180, 50, 255);
 		Mat mask;
 		inRange(hsv, lower_white, upper_white, mask); // 흰색 범위 설정
 

@@ -30,15 +30,29 @@ void DetectorUtil::SimpleShow()
 	if (!IsCameraOpened())
 		return;
 
-	bool bLoop = true;
-	do
+
+
+	bool bFinish = false;
+	while (!bFinish)
 	{
 		(*m_pCapture) >> (*m_pOriginFrame);
 
 		imshow(MAIN_FRAME, *m_pOriginFrame);
 
-		bLoop = ESCKeyUser();
-	} while (bLoop);
+		bFinish = (waitKey(1) == 27) ? true : false;
+	}
+
+
+
+	//bool bLoop = true;
+	//do
+	//{
+	//	(*m_pCapture) >> (*m_pOriginFrame);
+
+	//	imshow(MAIN_FRAME, *m_pOriginFrame);
+
+	//	bLoop = ESCKeyUser();
+	//} while (bLoop);
 
 
 
@@ -77,6 +91,22 @@ void DetectorUtil::SimpleShow()
 
 bool DetectorUtil::ESCKeyUser()
 {
+	bool bFinish = false;
+
+
+	//bFinish = (waitKey(1) == 27) ? true : false;
+	if (waitKey(1) == 27)
+	{
+		printf("***************************** [ EXIT PROGRAM ] ***************************** \n");
+		bFinish = true;
+	}
+	else
+	{
+		bFinish = false;
+	}
+	return bFinish;
+
+
 	bool bLoop = true;
 
 	if (waitKey(1) == 27) //wait for 'esc' key press for 1ms. If 'esc' key is pressed, break loop
@@ -137,21 +167,50 @@ void DetectorUtil::ProcessFrame(Mat& outputFrame)
 
 Mat DetectorUtil::Preprocess()
 {
-	// 1. HSV 변환
-	Mat hsv;
-	cvtColor(*m_pOriginFrame, hsv, COLOR_BGR2HSV);
+	Mat processFrame = m_pOriginFrame->clone();
 
-	// 2. 색상 필터링 (흰색 영역 검출)
-	Mat mask;
-	inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, COLOR_MAX), mask); // 흰색 영역 검출
+	// 1. BGR → Grayscale 변환 (HSV 변환 X)
+	Mat grayFrame;
+	cvtColor(processFrame, grayFrame, COLOR_BGR2GRAY);
 
-	// 3. 모폴로지 연산 (노이즈 제거)
-	Mat processed; // 모폴로지 연산 후 결과 프레임
-	Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5)); // 모폴로지 연산용 커널 프레임
-	morphologyEx(mask, processed, MORPH_OPEN, kernel);
-	morphologyEx(processed, processed, MORPH_CLOSE, kernel);
 
-	return processed;
+	// 2. 그림자 제거 (Top-Hat 변환)
+	Mat tophatFrame;
+	Mat kernel = getStructuringElement(MORPH_RECT, Size(15, 15)); // 커널 크기 조정 가능
+	morphologyEx(grayFrame, tophatFrame, MORPH_TOPHAT, kernel);// 배경보다 더 밝은 객체 강조
+
+
+
+
+	// 3. 어댑티브 임계값 적용
+	Mat binaryFrame;
+	adaptiveThreshold(grayFrame, binaryFrame, COLOR_MAX, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 11, 2);//임계값을 계산할 블록 크기(11 : 값이 크면 넓은 영역을 고려), 계산된 임계값에서 조정하는 보정값(2 : 값이 크면 어두워짐)
+
+	// 4. 노이즈 제거 (Morphological 연산)
+	kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+	morphologyEx(binaryFrame, binaryFrame, MORPH_CLOSE, kernel);  // 작은 구멍을 메워 골프공이 깨지는 것을 방지
+	morphologyEx(binaryFrame, binaryFrame, MORPH_OPEN, kernel);   // 작은 노이즈 제거
+	return binaryFrame;
+
+
+
+	/////////////////////////////////////////////////////
+
+		//// 1. HSV 변환
+		//Mat hsv;
+		//cvtColor(*m_pOriginFrame, hsv, COLOR_BGR2HSV);
+
+		//// 2. 색상 필터링 (흰색 영역 검출)
+		//Mat mask;
+		//inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, COLOR_MAX), mask); // 흰색 영역 검출
+
+		//// 3. 모폴로지 연산 (노이즈 제거)
+		//Mat processed; // 모폴로지 연산 후 결과 프레임
+		//Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5)); // 모폴로지 연산용 커널 프레임
+		//morphologyEx(mask, processed, MORPH_OPEN, kernel);
+		//morphologyEx(processed, processed, MORPH_CLOSE, kernel);
+
+		//return processed;
 }
 
 vector<Rect> DetectorUtil::DetectBalls(const Mat& mask)
@@ -233,6 +292,88 @@ void DetectorUtil::FindCandidateArea()
 
 
 
+bool DetectorUtil::HistogramStretch(Mat& imgSrc, Mat& imgDst)
+{
+	if (imgSrc.empty())
+	{
+		printf("[ERROR] [DetectorUtil::HistogramStretch()] m_pOriginFrame is Empty! \n");
+		return false;
+	}
+
+	imgSrc = (*m_pOriginFrame).clone();
+
+	int nHeight = imgSrc.rows;
+	int nWidth = imgSrc.cols;
+
+	double dMax, dMin;
+	double dSub;
+
+	unsigned char* pPos;
+
+	int nHist[256];
+	memset(nHist, 0, sizeof(int) * 256);
+
+	for (int i = 0; i < nHeight; ++i)
+	{
+		pPos = (unsigned char*)(imgSrc.row(i).data);
+		for (int j = 0; j < nWidth; ++j)
+		{
+			nHist[pPos[j]] += 1;
+		}
+	}
+
+
+
+
+	double dBottomR = 15;
+
+	int nNumBottom = (int)((double)(nHeight * nWidth) * (dBottomR / 100.0));
+	int nBoAccum = 0;
+	int nBoIdx = 0;
+	for (int i = 0; i < 256; ++i)
+	{
+		if (nBoAccum < nNumBottom)
+		{
+			nBoAccum += nHist[i];
+			nBoIdx = i;
+		}
+	}
+
+	if (nBoIdx == 0)
+		nBoIdx = 1;
+
+	nBoAccum = 0;
+	int nNumBo = 0;
+	for (int i = 0; i < nBoIdx; ++i)
+	{
+		nBoAccum += nHist[i] * i;
+		nNumBo += nHist[i];
+	}
+
+	dMin = (double)nBoAccum / (double)nNumBo;
+
+	dMax = dMin + 20.0;
+	dSub = dMax - dMin;
+
+	int nVal;
+	for (int i = 0; i < nHeight; ++i)
+	{
+		unsigned char* pData1 = (unsigned char*)imgSrc.row(i).data;
+		unsigned char* pData2 = (unsigned char*)imgDst.row(i).data;
+		for (int j = 0; j < nWidth; ++j)
+		{
+			nVal = (int)pData1[j];
+			nVal = (int)((((double)nVal - (double)dMin) / (double)dSub) * 255);
+
+			if (nVal > 255) nVal = 255;
+			else if (nVal < 0) nVal = 0;
+
+			pData2[j] = (unsigned char)nVal;
+		}
+	}
+
+	return true;
+}
 
 void DetectorUtil::FindCircle(Mat imgSrc, unsigned char Thres, CirInfo& circle)
 {
@@ -621,6 +762,11 @@ bool DetectorUtil::CustomProcess()
 	if (!IsCameraOpened())
 		return rst;
 
+
+
+	/////////////////////////////////////////////////
+
+
 	bool bLoop = true;
 	do
 	{
@@ -635,6 +781,55 @@ bool DetectorUtil::CustomProcess()
 		}
 
 		rst = true;
+
+		///////////////////////////////////////////////////////////////////
+
+		//1. Read the Image and convert it to Grayscale Format
+		Mat grayFrame;
+		cvtColor(*m_pOriginFrame, grayFrame, COLOR_BGR2GRAY);
+
+		//2. Apply Binary Thresholding
+		Mat threshFrame;
+		threshold(grayFrame, threshFrame, 230, 255, THRESH_BINARY);
+		imshow("Binary mage", threshFrame);
+
+
+		Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
+		Mat ContourImg;
+		erode(ContourImg, ContourImg, kernel);
+		dilate(ContourImg, ContourImg, kernel, Point(-1, -1), 4);
+
+
+		Mat copyFrame = m_pOriginFrame->clone();
+		bitwise_and(copyFrame, ContourImg, copyFrame);
+
+
+
+
+		////3. Find the Contours
+		//vector<vector<Point>> contours;
+		//vector<Vec4i> hierarchy;
+		//findContours(threshFrame, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+
+		////4. Draw Contours on the Original RGB Image
+		//Mat copyFrame = m_pOriginFrame->clone();
+		//drawContours(copyFrame, contours, -1, Scalar(0, 255, 0), 2);
+		//imshow("None approximation", copyFrame);
+
+		//destroyAllWindows();
+
+		///////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
 
 		Mat processFrame = m_pOriginFrame->clone();
 

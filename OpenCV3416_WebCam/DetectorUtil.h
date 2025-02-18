@@ -78,6 +78,8 @@ private:
 	CirInfof CalcRadiusCenterSub(vector<Point> Contour, Point2f pt1, float nRadius, int nNum);
 	void FindCircle(Mat imgSrc, unsigned char Thres, CirInfo& circle);
 
+	bool HistogramStretch(Mat& imgSrc, Mat& imgDst);
+
 	void ShowResult(const Mat& inFrame, Mat& outFrame);
 	void DrawBoundingBox(Mat& targetFrame, const vector<Rect>& boundingBoxes);
 	vector<Rect> DetectBallArea(const Mat& targetFrame);
