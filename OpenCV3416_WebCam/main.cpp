@@ -22,13 +22,14 @@ int FindBall_4();
 
 int main(int ac, char** av)
 {
-	int i32Rst = 0;
+	int rst = 0;
+
 
 	VideoCapture cap(0);
 
 	if (!cap.isOpened())
 	{
-		cerr << "웹캠을 열 수 없습니다!" << endl;
+		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<< \n");
 		return -1;
 	}
 
@@ -38,23 +39,42 @@ int main(int ac, char** av)
 		cap >> frame;
 		if (frame.empty()) break;
 
-		// 1. 색상 필터링 (HSV 변환 후 흰색 마스크 생성)
-		cvtColor(frame, hsv, COLOR_BGR2HSV);
-		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), mask); // 흰색 범위 설정
+		// 1. 대비 및 밝기 보정
+		Mat lab;
+		cvtColor(frame, lab, COLOR_BGR2Lab);
+		vector<Mat> lab_channels;
+		split(lab, lab_channels);
+		equalizeHist(lab_channels[0], lab_channels[0]); // 밝기 채널을 정규화
+		merge(lab_channels, lab);
+		cvtColor(lab, frame, COLOR_Lab2BGR);
 
-		// 2. 모폴로지 연산 (노이즈 제거)
+		// 2. 색상 필터링 (HSV 변환)
+		cvtColor(frame, hsv, COLOR_BGR2HSV);
+
+		// 골프공의 일반적인 색상 (흰색, 노란색, 형광 연두 등)을 필터링
+		Mat whiteMask, yellowMask, greenMask, combinedMask;
+		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), whiteMask);   // 흰색
+		inRange(hsv, Scalar(20, 100, 100), Scalar(30, 255, 255), yellowMask); // 노란색
+		inRange(hsv, Scalar(35, 50, 50), Scalar(85, 255, 255), greenMask);   // 연두색
+
+		// 모든 색상 합치기
+		combinedMask = whiteMask | yellowMask | greenMask;
+
+		// 3. 노이즈 제거 (모폴로지 연산)
 		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
-		morphologyEx(mask, processed, MORPH_OPEN, kernel);
+		morphologyEx(combinedMask, processed, MORPH_OPEN, kernel);
 		morphologyEx(processed, processed, MORPH_CLOSE, kernel);
 
-		// 3. 윤곽선 검출
+		// 4. 윤곽선 검출
 		vector<vector<Point>> contours;
 		vector<Vec4i> hierarchy;
 		findContours(processed, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-		for (const auto& contour : contours) {
+		for (const auto& contour : contours)
+		{
 			double area = contourArea(contour);
-			if (area > 500) { // 일정 크기 이상만 처리
+			if (area > 500) // 일정 크기 이상만 처리
+			{
 				// 외접 원 찾기
 				Point2f center;
 				float radius;
@@ -63,7 +83,9 @@ int main(int ac, char** av)
 				// 원형 여부 확인 (원에 가까운 정도)
 				double perimeter = arcLength(contour, true);
 				double circularity = 4 * M_PI * (area / (perimeter * perimeter));
-				if (circularity > 0.7) { // 원형성이 높을 때만 처리
+
+				if (circularity > 0.7) // 원형성이 높을 때만 처리
+				{
 					Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
 					rectangle(frame, boundingBox, Scalar(0, 255, 0), 2); // 네모 박스 그리기
 				}
@@ -72,17 +94,13 @@ int main(int ac, char** av)
 
 		// 결과 출력
 		imshow("Golf Ball Detection", frame);
-		imshow("Mask", mask); // 디버깅용 마스크 확인
+		imshow("Mask", combinedMask); // 디버깅용 마스크 확인
 
 		if (waitKey(1) == 27) break; // ESC 키로 종료
 	}
 
 	cap.release();
 	destroyAllWindows();
-
-
-
-
 
 
 	///////////////////////////////////////////////////////////////////////////////////////
@@ -146,7 +164,7 @@ int main(int ac, char** av)
 
 	//delete pDetector; // 메모리 해제
 
-	return i32Rst;
+	return rst;
 }
 
 String getDescription(const Point2f& centers)

@@ -800,7 +800,7 @@ int DetectorUtil::CustomProcess2()
 		for (int i = 0; i < contours.size(); i++)
 		{
 			if (contourArea(contours[i]) > 650)
-				rectangle(done, boundRect[i].tl(), boundRect[i].br(), Scalar(255, 255, 255), 2);
+				rectangle(src, boundRect[i].tl(), boundRect[i].br(), Scalar(255, 255, 255), 2);
 			text = to_string(i);
 		}
 

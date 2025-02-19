@@ -8,11 +8,15 @@
 
 #pragma comment(lib, "winmm.lib")
 
+#include <opencv2/opencv.hpp> // for video
+#include <opencv2/core/core.hpp>
+
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
-#include "opencv2/opencv.hpp"
-//#include <opencv2/tracking.hpp>
+
+#include <opencv2/imgproc/imgproc.hpp>
+
 
 using namespace cv;
 
@@ -20,6 +24,8 @@ using namespace cv;
 #include <iostream>
 #include <stdio.h>
 
+#include <string>
+#include <vector>
 
 //thread
 #include <thread>
@@ -27,6 +33,9 @@ using namespace cv;
 
 using namespace std;
 
+
+#define LOWER 0
+#define UPPER 1
 
 #define MAIN_FRAME	"Camera View"
 #define DEBUG_FRAME	"Morphology Mask View"
@@ -40,6 +49,13 @@ using namespace std;
 #define MAXBALLRADIUS 120
 #define MINBALLRADIUS 35
 
+
+typedef enum {
+	YELLOW = 0,
+	GREEN = 1,
+	RED = 2,
+	NUM_COLOR = 3
+} Color;
 
 //#define LOG_INFO(str1,str2) {CString str; str.Format(_T("[ >>>>>>>> %s <<<<<<<< ]  %s \n"),str1,str2); OutputDebugString(str);}
 	//CString a;
