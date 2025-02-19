@@ -42,3 +42,6 @@ using namespace std;
 
 
 //#define LOG_INFO(str1,str2) {CString str; str.Format(_T("[ >>>>>>>> %s <<<<<<<< ]  %s \n"),str1,str2); OutputDebugString(str);}
+	//CString a;
+	//	CString b;
+	//	LOG_INFO(a, b);

@@ -6,19 +6,129 @@ int FindBall_1();
 bool FindBall_2();
 
 int FindBall_3();
+int FindBall_4();
+
+//Mat grayFrame, tophatFrame, binaryFrame;
+//int kernelSize = 15;  // 초기 커널 크기
+//void updateTopHat(int, void*);
+
+//void updateTopHat(int, void*)
+//{
+//	Mat kernel = getStructuringElement(MORPH_RECT, Size(kernelSize, kernelSize));
+//	morphologyEx(grayFrame, tophatFrame, MORPH_TOPHAT, kernel);
+//	imshow("Top-Hat", tophatFrame);
+//}
+
 
 int main(int ac, char** av)
 {
 	int i32Rst = 0;
 
-	//CString a;
-	//	CString b;
-	//	LOG_INFO(a, b);
+	VideoCapture cap(0);
 
+	if (!cap.isOpened())
+	{
+		cerr << "웹캠을 열 수 없습니다!" << endl;
+		return -1;
+	}
+
+	while (true)
+	{
+		Mat frame, hsv, mask, processed;
+		cap >> frame;
+		if (frame.empty()) break;
+
+		// 1. 색상 필터링 (HSV 변환 후 흰색 마스크 생성)
+		cvtColor(frame, hsv, COLOR_BGR2HSV);
+		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), mask); // 흰색 범위 설정
+
+		// 2. 모폴로지 연산 (노이즈 제거)
+		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+		morphologyEx(mask, processed, MORPH_OPEN, kernel);
+		morphologyEx(processed, processed, MORPH_CLOSE, kernel);
+
+		// 3. 윤곽선 검출
+		vector<vector<Point>> contours;
+		vector<Vec4i> hierarchy;
+		findContours(processed, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+		for (const auto& contour : contours) {
+			double area = contourArea(contour);
+			if (area > 500) { // 일정 크기 이상만 처리
+				// 외접 원 찾기
+				Point2f center;
+				float radius;
+				minEnclosingCircle(contour, center, radius);
+
+				// 원형 여부 확인 (원에 가까운 정도)
+				double perimeter = arcLength(contour, true);
+				double circularity = 4 * M_PI * (area / (perimeter * perimeter));
+				if (circularity > 0.7) { // 원형성이 높을 때만 처리
+					Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
+					rectangle(frame, boundingBox, Scalar(0, 255, 0), 2); // 네모 박스 그리기
+				}
+			}
+		}
+
+		// 결과 출력
+		imshow("Golf Ball Detection", frame);
+		imshow("Mask", mask); // 디버깅용 마스크 확인
+
+		if (waitKey(1) == 27) break; // ESC 키로 종료
+	}
+
+	cap.release();
+	destroyAllWindows();
+
+
+
+
+
+
+	///////////////////////////////////////////////////////////////////////////////////////
+
+	//VideoCapture cap(0); // 웹캠 열기 (0번 카메라)
+
+	//if (!cap.isOpened())
+	//{
+	//	printf("[ERROR] Can't open the camera! \n");
+	//	return -1;
+	//}
+
+	//int capW = cvRound(cap.get(CAP_PROP_FRAME_WIDTH));
+	//int capH = cvRound(cap.get(CAP_PROP_FRAME_HEIGHT));
+
+	//bool bFinish = false;
+	//while (!bFinish)
+	//{
+	//	Mat originFrame;
+	//	cap >> originFrame;
+
+	//	if (originFrame.empty()) {
+	//		cout << "이미지를 불러올 수 없습니다!" << endl;
+	//		return -1;
+	//	}
+
+		//// 1. BGR → Grayscale 변환
+		//cvtColor(originFrame, grayFrame, COLOR_BGR2GRAY);
+
+		//// 2. 트랙바 생성하여 커널 크기 조절
+		//namedWindow("Top-Hat");
+		//createTrackbar("Kernel Size", "Top-Hat", &kernelSize, 50, updateTopHat);
+
+		//// 초기 필터 적용
+		//updateTopHat(0, 0);
+
+	//	bFinish = (waitKey(1) == 27) ? true : false;
+	//}
+
+
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	//FindBall_1();
 	//i32Rst = FindBall_2() ? 0 : -1;
-	i32Rst = FindBall_3() ? 0 : -1;
+	//i32Rst = FindBall_3() ? 0 : -1;
 
 	//DetectorUtil* pDetector = new DetectorUtil(); // 포인터로 객체 생성
 
@@ -39,6 +149,87 @@ int main(int ac, char** av)
 	return i32Rst;
 }
 
+String getDescription(const Point2f& centers)
+{
+	string temp = static_cast<string>("Ball center: ") + to_string(static_cast<int>(centers.x)) + static_cast<string>(", ") + to_string((static_cast<int>(centers.y)));
+	return static_cast<String>(temp);
+}
+
+int FindBall_4()
+{
+	int area;
+	Mat src, srcCopy, blured, imageHSV, mask, outputImage;
+	vector<vector<Point>> contours;
+
+	const Scalar greenColor = Scalar(0, 255, 0);
+	const Scalar turquoiseColor = Scalar(255, 255, 0);
+	const int hmin = 0, hmax = 12;
+	const int smin = 126, smax = 255;
+	const int vmin = 1, vmax = 203;
+	const Scalar lower(hmin, smin, vmin);
+	const Scalar upper(hmax, smax, vmax);
+	const int minBallArea = 50000;
+
+
+	// Create Window
+	String figureName = "Preview";
+	namedWindow(figureName, WINDOW_NORMAL);
+	resizeWindow(figureName, 600, 600);
+
+	VideoCapture cap(0);
+	if (!cap.isOpened()) {
+		cerr << "웹캠을 열 수 없습니다!" << endl;
+		return -1;
+	}
+
+	while (true)
+	{
+		// 프레임 가져오기
+		cap >> src;
+		if (src.empty()) break;
+
+		srcCopy = src.clone();
+
+		// Get contours
+		GaussianBlur(src, blured, Size(11, 11), 11, 11);
+		cvtColor(blured, imageHSV, COLOR_BGR2HSV);
+		inRange(imageHSV, lower, upper, mask);
+		erode(mask, mask, getStructuringElement(MORPH_RECT, Size(5, 5)));
+		dilate(mask, mask, getStructuringElement(MORPH_RECT, Size(10, 10)));
+		findContours(mask, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+		vector<Point2f> centers(contours.size()); // inits in each loop but with correct size, no need to recopy the array
+		vector<float> radius(contours.size());
+
+		for (int i = 0; i < contours.size(); i++)
+		{
+			// Filter out too small objects (noise)
+			area = contourArea(contours[i]);
+			if (area < minBallArea)
+				continue;
+
+			// Draw on image
+			minEnclosingCircle(contours[i], centers[i], radius[i]);
+			circle(srcCopy, centers[i], (int)radius[i], greenColor, 3);
+			putText(srcCopy, getDescription(centers[i]), Point(40, 40), FONT_HERSHEY_PLAIN, 3, turquoiseColor, 3);
+			line(srcCopy, Point(centers[i].x - 20, centers[i].y), Point(centers[i].x + 20, centers[i].y), turquoiseColor, 3);
+			line(srcCopy, Point(centers[i].x, centers[i].y - 20), Point(centers[i].x, centers[i].y + 20), turquoiseColor, 3);
+		}
+		contours.clear();
+
+		// Combine images and print
+		vector<Mat> matrices = { src, srcCopy };
+		hconcat(matrices, outputImage);
+		imshow(figureName, outputImage);
+
+		// ESC 키 누르면 종료
+		if (waitKey(1) == 27) break;
+	}
+
+	cap.release();
+	destroyAllWindows();
+
+	return 0;
+}
 
 int FindBall_3()
 {
