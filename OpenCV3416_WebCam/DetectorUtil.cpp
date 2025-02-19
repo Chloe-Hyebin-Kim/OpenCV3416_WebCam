@@ -666,6 +666,188 @@ CirInfof DetectorUtil::CalcRadiusCenterSub(vector<Point> Contour, Point2f pt1, f
 	return Circle;
 }
 
+int DetectorUtil::CustomProcess0()
+{
+	VideoCapture cap(0);
+
+	if (!cap.isOpened())
+	{
+		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<< \n");
+		return -1;
+	}
+
+	while (true)
+	{
+		Mat frame, hsv, mask, processed;
+		cap >> frame;
+		if (frame.empty()) break;
+
+		// 1. 색상 필터링 (HSV 변환 후 흰색 마스크 생성)
+		cvtColor(frame, hsv, COLOR_BGR2HSV);
+		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), mask); // 흰색 범위 설정
+
+		// 2. 모폴로지 연산 (노이즈 제거)
+		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+		morphologyEx(mask, processed, MORPH_OPEN, kernel);
+		morphologyEx(processed, processed, MORPH_CLOSE, kernel);
+
+		// 3. 윤곽선 검출
+		vector<vector<Point>> contours;
+		vector<Vec4i> hierarchy;
+		findContours(processed, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+		for (const auto& contour : contours)
+		{
+			double area = contourArea(contour);
+
+			if (area > 500) // 일정 크기 이상만 처리
+			{
+				// 외접 원 찾기
+				Point2f center;
+				float radius;
+				minEnclosingCircle(contour, center, radius);
+
+				// 원형 여부 확인 (원에 가까운 정도)
+				double perimeter = arcLength(contour, true);
+				double circularity = 4 * M_PI * (area / (perimeter * perimeter));
+
+				if (circularity > 0.7)// 원형성이 높을 때만 처리
+				{
+					Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
+					rectangle(frame, boundingBox, Scalar(0, 255, 0), 2); // 네모 박스 그리기
+				}
+			}
+		}
+
+		// 결과 출력
+		imshow("Golf Ball Detection", frame);
+		imshow("Mask", mask); // 디버깅용 마스크 확인
+
+		if (waitKey(1) == 27) break; // ESC 키로 종료
+	}
+
+	cap.release();
+	destroyAllWindows();
+
+
+
+	return 0;
+}
+
+int DetectorUtil::CustomProcess2()
+{
+	VideoCapture cap(0);
+
+	if (!cap.isOpened()) // if not success, exit program
+	{
+		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<< \n");
+
+		cap.release();
+		destroyAllWindows();
+
+		return false;
+	}
+
+	Mat src, srcGray, blurred, canny, thresh, hsv, filtered, cont, done;
+	vector< vector<Point> > contours;
+	vector< vector<Point> > ThreshContours;
+	vector<Vec4i> heirarchy;
+
+	while (true)
+	{
+		cap >> src;
+		resize(src, src, Size(640, 480));
+
+		//cvtColor(src,src,CV_BGR2GRAY);
+		//blur(src,blurred,Size(49,51));
+		//threshold(blurred,thresh,150,255,CV_THRESH_BINARY);
+		//filtered = thresh;
+
+		//Uses thresh or filtering
+		hsv = src.clone();
+		cvtColor(src, srcGray, CV_BGR2GRAY);
+
+		//Uses HSV for filtering
+		cvtColor(src, hsv, CV_BGR2HSV);
+		blur(hsv, blurred, Size(13, 13));
+		inRange(hsv, Scalar(34, 23, 181), Scalar(48, 218, 255), filtered);
+
+		threshold(srcGray, thresh, 221, 255, CV_THRESH_BINARY);
+
+		done = src.clone();
+
+		findContours(thresh, ThreshContours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+
+		drawContours(done, ThreshContours, -1, Scalar(0, 0, 0), -1);
+
+		findContours(filtered, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+		cont = Mat::zeros(filtered.size(), CV_8UC1);
+		drawContours(cont, contours, -1, Scalar(255, 255, 255), 1);
+
+		vector< vector<Point> > contours_poly(contours.size());
+		vector<Rect> boundRect(contours.size());
+		vector<Point2f> center(contours.size());
+		vector<float> radius(contours.size());
+
+		for (int i = 0; i < contours.size(); i++)
+		{
+			approxPolyDP(Mat(contours[i]), contours_poly[i], 3, true);
+			boundRect[i] = boundingRect(Mat(contours_poly[i]));
+			minEnclosingCircle((Mat)contours_poly[i], center[i], radius[i]);
+		}
+
+		string text;
+		for (int i = 0; i < contours.size(); i++)
+		{
+			if (contourArea(contours[i]) > 650)
+				rectangle(done, boundRect[i].tl(), boundRect[i].br(), Scalar(255, 255, 255), 2);
+			text = to_string(i);
+		}
+
+		int circles = contours.size() - 1;
+
+
+		//show original
+		namedWindow("Original");
+		imshow("Original", src);
+
+		//show HSV
+		//namedWindow("HSV");
+		//imshow("HSV",hsv);
+
+		//show blurred
+	   // namedWindow("blurred");
+		//imshow("blurred",blurred);
+
+		//show filtered
+		namedWindow("filtered");
+		imshow("filtered", filtered);
+
+		//show contours
+		namedWindow("contours");
+		imshow("contours", cont);
+
+		//show end img
+		namedWindow("end");
+		imshow("end", done);
+
+
+
+		namedWindow("thresh");
+		imshow("thresh", thresh);
+
+		// ESC 키 누르면 종료
+		if (waitKey(1) == 27) break;
+	}
+
+	cap.release();
+	destroyAllWindows();
+
+	return 0;
+}
+
+
+
 bool DetectorUtil::CustomAdaptiveProcess()
 {
 	bool rst = false;

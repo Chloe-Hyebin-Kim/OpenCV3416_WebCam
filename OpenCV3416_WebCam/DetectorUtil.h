@@ -45,9 +45,13 @@ public:
 	//단순 영상 송출
 	void SimpleShow();
 
+	int CustomProcess0();
+
+
 	//색상 분할 후 모폴로지 적용하고 가우시안 블러사용후 허프 변환
 	bool ProcessMorphGaussianHough();
 	bool CustomProcess();
+	int CustomProcess2();
 
 	bool CustomAdaptiveProcess();
 
