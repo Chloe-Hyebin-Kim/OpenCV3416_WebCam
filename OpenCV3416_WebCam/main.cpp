@@ -24,48 +24,61 @@ int main(int ac, char** av)
 {
 	int rst = 0;
 
-
 	VideoCapture cap(0);
-
-	if (!cap.isOpened())
-	{
+	if (!cap.isOpened()) {
 		printf("[ERROR] >>>>>>>>>>>> Can't open the camera! <<<<<<<<<<<< \n");
 		return -1;
 	}
 
+	Mat frame, hsv, mask, processed;
+
 	while (true)
 	{
-		Mat frame, hsv, mask, processed;
 		cap >> frame;
 		if (frame.empty()) break;
 
-		// 1. 대비 및 밝기 보정
+		// 1. 대비 및 밝기 보정 (CLAHE 적용)
 		Mat lab;
 		cvtColor(frame, lab, COLOR_BGR2Lab);
 		vector<Mat> lab_channels;
 		split(lab, lab_channels);
-		equalizeHist(lab_channels[0], lab_channels[0]); // 밝기 채널을 정규화
+		Ptr<CLAHE> clahe = createCLAHE(2.0, Size(8, 8));
+		clahe->apply(lab_channels[0], lab_channels[0]); // 밝기 채널을 정규화
 		merge(lab_channels, lab);
 		cvtColor(lab, frame, COLOR_Lab2BGR);
 
 		// 2. 색상 필터링 (HSV 변환)
 		cvtColor(frame, hsv, COLOR_BGR2HSV);
 
-		// 골프공의 일반적인 색상 (흰색, 노란색, 형광 연두 등)을 필터링
-		Mat whiteMask, yellowMask, greenMask, combinedMask;
-		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), whiteMask);   // 흰색
-		inRange(hsv, Scalar(20, 100, 100), Scalar(30, 255, 255), yellowMask); // 노란색
-		inRange(hsv, Scalar(35, 50, 50), Scalar(85, 255, 255), greenMask);   // 연두색
+		// 골프공 색상 필터링 (흰색, 노란색, 연두색 등)
+		Mat whiteMask, yellowMask, greenMask, blueMask, orangeMask, combinedMask;
+		inRange(hsv, Scalar(0, 0, 180), Scalar(180, 50, 255), whiteMask);
+		inRange(hsv, Scalar(20, 100, 100), Scalar(30, 255, 255), yellowMask);
+		inRange(hsv, Scalar(35, 50, 50), Scalar(85, 255, 255), greenMask);
+		inRange(hsv, Scalar(0, 180, 55), Scalar(80, 255, 255), blueMask);
+		inRange(hsv, Scalar(100, 200, 200), Scalar(140, 255, 255), orangeMask);
 
-		// 모든 색상 합치기
-		combinedMask = whiteMask | yellowMask | greenMask;
+		combinedMask = whiteMask | yellowMask | greenMask | blueMask | orangeMask;
 
-		// 3. 노이즈 제거 (모폴로지 연산)
-		Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+		// 3. 추가 필터링 (LAB 색상 활용하여 밝은 물체 강화)
+		Mat labMask;
+		Scalar lower_lab = Scalar(200, 120, 120); // 밝고 특정 색상 범위
+		Scalar upper_lab = Scalar(255, 140, 140);
+		inRange(lab, lower_lab, upper_lab, labMask);
+		combinedMask = combinedMask | labMask;
+
+		// 4. 엣지 검출 적용 (Canny)
+		Mat edges;
+		Canny(frame, edges, 40, 80, 3);
+		Mat edgeMask;
+		bitwise_and(edges, combinedMask, edgeMask);
+
+		// 5. 노이즈 제거 (모폴로지 연산)
+		Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
 		morphologyEx(combinedMask, processed, MORPH_OPEN, kernel);
 		morphologyEx(processed, processed, MORPH_CLOSE, kernel);
 
-		// 4. 윤곽선 검출
+		// 6. 윤곽선 검출 및 원형성 필터링
 		vector<vector<Point>> contours;
 		vector<Vec4i> hierarchy;
 		findContours(processed, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
@@ -73,8 +86,8 @@ int main(int ac, char** av)
 		for (const auto& contour : contours)
 		{
 			double area = contourArea(contour);
-			if (area > 500) // 일정 크기 이상만 처리
-			{
+			if (area > 500)
+			{ // 일정 크기 이상만 처리
 				// 외접 원 찾기
 				Point2f center;
 				float radius;
@@ -83,18 +96,21 @@ int main(int ac, char** av)
 				// 원형 여부 확인 (원에 가까운 정도)
 				double perimeter = arcLength(contour, true);
 				double circularity = 4 * M_PI * (area / (perimeter * perimeter));
+				Rect boundingBox = boundingRect(contour);
+				float aspectRatio = (float)boundingBox.width / boundingBox.height;
 
-				if (circularity > 0.7) // 원형성이 높을 때만 처리
+				if (circularity > 0.7 && aspectRatio > 0.8 && aspectRatio < 1.2)
 				{
-					Rect boundingBox(center.x - radius, center.y - radius, radius * 2, radius * 2);
 					rectangle(frame, boundingBox, Scalar(0, 255, 0), 2); // 네모 박스 그리기
+					circle(frame, center, (int)radius, Scalar(0, 0, 255), 2); // 원형 테두리 추가
 				}
 			}
 		}
 
 		// 결과 출력
 		imshow("Golf Ball Detection", frame);
-		imshow("Mask", combinedMask); // 디버깅용 마스크 확인
+		imshow("Mask", combinedMask);
+		imshow("Edges", edgeMask);
 
 		if (waitKey(1) == 27) break; // ESC 키로 종료
 	}
