@@ -34,9 +34,6 @@ using namespace cv;
 using namespace std;
 
 
-#define LOWER 0
-#define UPPER 1
-
 #define MAIN_FRAME	"Camera View"
 #define DEBUG_FRAME	"Morphology Mask View"
 
@@ -49,12 +46,31 @@ using namespace std;
 #define MAXBALLRADIUS 120
 #define MINBALLRADIUS 35
 
+#define LOWER 0
+#define UPPER 1
+
 
 typedef enum {
 	YELLOW = 0,
 	GREEN = 1,
 	RED = 2,
-	NUM_COLOR = 3
+	BLUE1 = 3,
+	BLUE2 = 4,
+	ORANGE = 5,
+
+	REDMASK1 = 6,
+	REDMASK2 = 7,
+	ORANGEMASK = 8,
+	YELLOWMASK = 9,
+	GREENMASK = 10,
+	BLUEMASK = 11,
+	INDIGOMASK = 12,
+	VIOLETMASK = 13,
+
+	BLACKMASK = 14,
+	WHITEMASK = 15,
+
+	NUM_COLOR,
 } Color;
 
 //#define LOG_INFO(str1,str2) {CString str; str.Format(_T("[ >>>>>>>> %s <<<<<<<< ]  %s \n"),str1,str2); OutputDebugString(str);}
