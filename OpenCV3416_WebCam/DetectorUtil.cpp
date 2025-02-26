@@ -1,5 +1,5 @@
 #include "DetectorUtil.h"
-#include <omp.h>
+//#include <omp.h>
 
 DetectorUtil::DetectorUtil()
 {
@@ -24,6 +24,31 @@ DetectorUtil::~DetectorUtil()
 	destroyAllWindows();
 }
 
+void DetectorUtil::OnUpdateAdaptiveThreshold(int, void*)
+{
+	// blockSize가 짝수 일 때 홀수로 설정
+	if (m_i32BlockSize % 2 == 0)
+		m_i32BlockSize += 1;
+
+	//blockSize너무 작으면 3으로 설정
+	if (m_i32BlockSize < 3)
+		m_i32BlockSize = 3;
+
+	//  blockSize가 입력 이미지 크기보다 크면 조정
+	int maxBlockSize = min(m_GrayFrame.rows, m_GrayFrame.cols);
+	if (m_i32BlockSize > maxBlockSize)
+		m_i32BlockSize = maxBlockSize | 1; // 홀수 유지
+
+	adaptiveThreshold(m_GrayFrame, m_BinaryFrame, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, m_i32BlockSize, m_i32Constant);
+	imshow("Adaptive Threshold", m_BinaryFrame);
+}
+
+void DetectorUtil::OnUpdateTopHat(int, void*)
+{
+	Mat kernel = getStructuringElement(MORPH_RECT, Size(m_i32KernelSize, m_i32KernelSize));
+	morphologyEx(m_GrayFrame, m_TophatFrame, MORPH_TOPHAT, kernel);
+	imshow("Top-Hat", m_TophatFrame);
+}
 
 void DetectorUtil::SimpleShow()
 {

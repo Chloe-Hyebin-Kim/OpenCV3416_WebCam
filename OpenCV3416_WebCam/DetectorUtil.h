@@ -42,11 +42,25 @@ public:
 	~DetectorUtil();
 
 public:
+	// 정적 멤버 변수 (전역 변수 역할)
+	static int m_i32BlockSize;  // 임계값을 계산할 블록 크기 (홀수, 값이 크면 넓은 영역을 고려) //기본값 11
+	static int m_i32Constant;          //계산된 임계값에서 조정하는 보정값 (값이 크면 어두워짐)        // 기본값 2
+
+	static int m_i32KernelSize;  // 초기 커널 크기 15
+
+	// 이미지 데이터를 저장할 정적 멤버
+	static Mat m_GrayFrame;
+	static Mat m_BinaryFrame;
+	static Mat m_TophatFrame;
+
+public:
+	static void OnUpdateAdaptiveThreshold(int, void*);
+	static void OnUpdateTopHat(int, void*);
+
+public:
 	//단순 영상 송출
 	void SimpleShow();
-
 	int CustomProcess0();
-
 
 	//색상 분할 후 모폴로지 적용하고 가우시안 블러사용후 허프 변환
 	bool ProcessMorphGaussianHough();
