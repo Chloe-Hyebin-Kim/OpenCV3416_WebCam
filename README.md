@@ -47,6 +47,21 @@
 ![image](https://github.com/user-attachments/assets/e0d0110b-532c-4486-95b1-91d9d47d321d)
 
 
+3. 공 색깔에 따라 감지되는 수준이 다름
+   ![image](https://github.com/user-attachments/assets/47aaeb3c-aca2-4417-a0c3-01ac59a255ec)
+
+
+## Solution
+
+
+1. Canny 엣지와 컬러 컴바인 마스크 활용
+   ![image](https://github.com/user-attachments/assets/da74adae-4268-4688-a9dc-10d131b1dc5e)
+
+2. ![image](https://github.com/user-attachments/assets/4f04f2bc-9888-4f11-b6ae-dfd1c13e4b44)
+
+3. 변인통제 필요
+
+
 ## Result
 
 ![image](https://github.com/user-attachments/assets/56b69ec5-2c2c-4876-be17-46722fb93a81)
